@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squid NYC - Destruction Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F6FF 50%, #87CEEB 100%);
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            display: block;
+            cursor: crosshair;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+        
+        #controls h3 {
+            margin: 0 0 10px 0;
+            color: #FFD700;
+        }
+        
+        .control-group {
+            margin-bottom: 10px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        input[type="range"] {
+            width: 150px;
+        }
+        
+        #fireButton {
+            background: #FF4500;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        
+        #fireButton:hover {
+            background: #FF6500;
+        }
+        
+        #fireButton:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        #musicControls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+        
+        #musicControls button {
+            background: #4169E1;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            margin: 2px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+        
+        #musicControls button:hover {
+            background: #6495ED;
+        }
+        
+        #musicControls button.active {
+            background: #FF4500;
+        }
+        
+        #volumeSlider {
+            width: 80px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="controls">
+        <h3>🐙 Squid Catapult</h3>
+        <div class="control-group">
+            <label>Angle: <span id="angleValue">45</span>°</label>
+            <input type="range" id="angleSlider" min="0" max="90" value="45">
+        </div>
+        <div class="control-group">
+            <label>Power: <span id="powerValue">50</span>%</label>
+            <input type="range" id="powerSlider" min="10" max="100" value="50">
+        </div>
+        <button id="fireButton">🚀 Launch Squid!</button>
+    </div>
+    
+    <div id="musicControls">
+        <h4 style="margin: 0 0 5px 0; color: #FFD700;">🎵 C64 Music</h4>
+        <div id="songTitle" style="font-size: 9px; color: #87CEEB; margin-bottom: 3px;">♫ Loading...</div>
+        <button id="playMusicBtn">Play</button>
+        <button id="pauseMusicBtn">Pause</button>
+        <button id="muteBtn">Mute</button>
+        <button id="nextSongBtn">Next</button>
+        <br>
+        <label style="font-size: 10px;">Volume:</label>
+        <input type="range" id="volumeSlider" min="0" max="100" value="70">
+    </div>
+    
+    <script src="game.js"></script>
+</body>
+</html>
