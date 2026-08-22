@@ -3,133 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Squid NYC - Destruction Game</title>
+    <title>Squid NYC — Harbor Assault</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: linear-gradient(to bottom, #87CEEB 0%, #E0F6FF 50%, #87CEEB 100%);
-            font-family: Arial, sans-serif;
-            overflow: hidden;
+        :root {
+            --ink: #f4efe4;
+            --muted: #b9c4d4;
+            --gold: #f0c14b;
+            --ember: #ff6b35;
+            --glass: rgba(8, 10, 18, 0.72);
+            --line: rgba(240, 193, 75, 0.28);
         }
-        
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #070510;
+            color: var(--ink);
+            font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+        }
+
         #gameCanvas {
             display: block;
+            width: 100vw;
+            height: 100vh;
             cursor: crosshair;
         }
-        
+
+        .panel {
+            position: absolute;
+            background: var(--glass);
+            border: 1px solid var(--line);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            color: var(--ink);
+        }
+
         #controls {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 15px;
-            border-radius: 10px;
-            font-size: 14px;
+            top: 16px;
+            left: 16px;
+            width: 250px;
+            padding: 16px 18px 18px;
         }
-        
-        #controls h3 {
-            margin: 0 0 10px 0;
-            color: #FFD700;
+
+        #controls h1 {
+            margin: 0 0 2px;
+            font-size: 22px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--gold);
+            text-shadow: 0 0 18px rgba(240, 193, 75, 0.35);
         }
-        
-        .control-group {
-            margin-bottom: 10px;
+
+        #controls .tag {
+            margin: 0 0 14px;
+            font-size: 11px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--muted);
         }
-        
+
+        .control-group { margin-bottom: 12px; }
+
         .control-group label {
-            display: block;
-            margin-bottom: 5px;
-        }
-        
-        input[type="range"] {
-            width: 150px;
-        }
-        
-        #fireButton {
-            background: #FF4500;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 10px;
-        }
-        
-        #fireButton:hover {
-            background: #FF6500;
-        }
-        
-        #fireButton:disabled {
-            background: #666;
-            cursor: not-allowed;
-        }
-        
-        #musicControls {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 10px;
-            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
             font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            color: var(--muted);
         }
-        
-        #musicControls button {
-            background: #4169E1;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            margin: 2px;
-            border-radius: 3px;
+
+        .control-group label span {
+            color: var(--gold);
+            font-weight: 700;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 99px;
+            background: linear-gradient(90deg, #2a3344, #f0c14b);
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #fff6d8;
+            box-shadow: 0 0 0 3px rgba(240, 193, 75, 0.35);
             cursor: pointer;
-            font-size: 10px;
         }
-        
-        #musicControls button:hover {
-            background: #6495ED;
+
+        #fireButton {
+            width: 100%;
+            margin-top: 6px;
+            border: 0;
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #1a0d08;
+            background: linear-gradient(180deg, #ffb347, var(--ember));
+            box-shadow: 0 8px 20px rgba(255, 107, 53, 0.35);
+            cursor: pointer;
         }
-        
+
+        #fireButton:hover { filter: brightness(1.08); }
+        #fireButton:disabled {
+            background: #3a4150;
+            color: #8b93a3;
+            box-shadow: none;
+            cursor: not-allowed;
+            filter: none;
+        }
+
+        .hint {
+            margin: 10px 0 0;
+            font-size: 11px;
+            line-height: 1.45;
+            color: #8f9aab;
+        }
+
+        #hud {
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 22px;
+            padding: 10px 22px;
+            font-size: 13px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        #hud b { color: var(--gold); font-size: 16px; }
+
+        #musicControls {
+            top: 16px;
+            right: 16px;
+            width: 220px;
+            padding: 14px 16px 16px;
+        }
+
+        #musicControls h2 {
+            margin: 0 0 4px;
+            font-size: 12px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--gold);
+        }
+
+        #songTitle {
+            min-height: 16px;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: #9ad7ff;
+        }
+
+        .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+        #musicControls button {
+            flex: 1 1 46%;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: #1b2230;
+            color: var(--ink);
+            border-radius: 8px;
+            padding: 7px 8px;
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        #musicControls button:hover { background: #273044; }
         #musicControls button.active {
-            background: #FF4500;
+            background: var(--ember);
+            color: #1a0d08;
+            border-color: transparent;
         }
-        
-        #volumeSlider {
-            width: 80px;
+
+        .vol {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        #unlockBanner {
+            display: none;
+            position: absolute;
+            left: 50%;
+            bottom: 28px;
+            transform: translateX(-50%);
+            padding: 10px 18px;
+            border-radius: 999px;
+            background: rgba(240, 193, 75, 0.92);
+            color: #1a1204;
+            font-size: 13px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
-    
-    <div id="controls">
-        <h3>🐙 Squid Catapult</h3>
+
+    <div id="controls" class="panel">
+        <h1>Squid NYC</h1>
+        <p class="tag">Harbor assault</p>
         <div class="control-group">
-            <label>Angle: <span id="angleValue">45</span>°</label>
-            <input type="range" id="angleSlider" min="0" max="90" value="45">
+            <label>Angle <span id="angleValue">48</span>°</label>
+            <input type="range" id="angleSlider" min="12" max="82" value="48">
         </div>
         <div class="control-group">
-            <label>Power: <span id="powerValue">50</span>%</label>
-            <input type="range" id="powerSlider" min="10" max="100" value="50">
+            <label>Power <span id="powerValue">62</span>%</label>
+            <input type="range" id="powerSlider" min="18" max="100" value="62">
         </div>
-        <button id="fireButton">🚀 Launch Squid!</button>
+        <button id="fireButton">Launch Squid</button>
+        <p class="hint">A / D or arrows aim · W / S power · Space launch · R restart</p>
     </div>
-    
-    <div id="musicControls">
-        <h4 style="margin: 0 0 5px 0; color: #FFD700;">🎵 C64 Music</h4>
-        <div id="songTitle" style="font-size: 9px; color: #87CEEB; margin-bottom: 3px;">♫ Loading...</div>
-        <button id="playMusicBtn">Play</button>
-        <button id="pauseMusicBtn">Pause</button>
-        <button id="muteBtn">Mute</button>
-        <button id="nextSongBtn">Next</button>
-        <br>
-        <label style="font-size: 10px;">Volume:</label>
-        <input type="range" id="volumeSlider" min="0" max="100" value="70">
+
+    <div id="hud" class="panel">
+        <div>Standing <b id="standingCount">0</b></div>
+        <div>Hits <b id="hitCount">0</b></div>
     </div>
-    
+
+    <div id="musicControls" class="panel">
+        <h2>Harbor Radio</h2>
+        <div id="songTitle">Harbor Pulse</div>
+        <div class="btn-row">
+            <button id="playMusicBtn">Play</button>
+            <button id="pauseMusicBtn">Pause</button>
+            <button id="muteBtn">Mute</button>
+            <button id="nextSongBtn">Next</button>
+        </div>
+        <div class="vol">
+            <span>Vol</span>
+            <input type="range" id="volumeSlider" min="0" max="100" value="72">
+        </div>
+    </div>
+
+    <div id="unlockBanner">Click anywhere to start sound</div>
+
+    <script src="audio.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
