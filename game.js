@@ -1,9 +1,15 @@
 'use strict';
 
 const TAU = Math.PI * 2;
+const BEST_KEY = 'squidnyc-best';
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function distToRect(px, py, x, y, w, h) {
+    const dx = Math.max(x - px, 0, px - (x + w));
+    const dy = Math.max(y - py, 0, py - (y + h));
+    return Math.hypot(dx, dy);
+}
 
 function mulberry32(seed) {
     let a = seed >>> 0;
@@ -119,7 +125,6 @@ class Atmosphere {
         ctx.beginPath();
         ctx.arc(x, y, r * 4.2, 0, TAU);
         ctx.fill();
-
         const moon = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.2, x, y, r);
         moon.addColorStop(0, '#fff4d2');
         moon.addColorStop(0.7, '#e8c98a');
@@ -157,14 +162,15 @@ class Particle {
         this.gravity = kind === 'spark' ? 0.18 : kind === 'smoke' ? -0.02 : 0.16;
     }
 
-    update() {
-        this.x += this.vx;
-        this.y += this.vy;
-        this.vy += this.gravity;
+    update(scale) {
+        const s = scale || 1;
+        this.x += this.vx * s;
+        this.y += this.vy * s;
+        this.vy += this.gravity * s;
         this.vx *= this.kind === 'smoke' ? 0.99 : 0.985;
-        this.rot += this.spin;
-        if (this.kind === 'smoke') this.size += 0.08;
-        this.life--;
+        this.rot += this.spin * s;
+        if (this.kind === 'smoke') this.size += 0.08 * s;
+        this.life -= s;
     }
 
     render(ctx) {
@@ -203,9 +209,9 @@ class Shockwave {
         this.life = 1;
     }
 
-    update() {
-        this.r += 7;
-        this.life -= 0.035;
+    update(scale) {
+        this.r += 7 * (scale || 1);
+        this.life -= 0.035 * (scale || 1);
     }
 
     render(ctx) {
@@ -222,6 +228,37 @@ class Shockwave {
     get dead() { return this.life <= 0 || this.r > this.maxR; }
 }
 
+class Floater {
+    constructor(text, x, y, color, size) {
+        this.text = text;
+        this.x = x;
+        this.y = y;
+        this.color = color || '#fff6d8';
+        this.size = size || 22;
+        this.life = 1;
+        this.vy = -38;
+    }
+
+    update(dt) {
+        this.y += this.vy * dt;
+        this.vy += 18 * dt;
+        this.life -= dt * 0.85;
+    }
+
+    render(ctx) {
+        ctx.save();
+        ctx.globalAlpha = clamp(this.life, 0, 1);
+        ctx.fillStyle = this.color;
+        ctx.font = `800 ${this.size}px Trebuchet MS, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = 4;
+        ctx.strokeText(this.text, this.x, this.y);
+        ctx.fillText(this.text, this.x, this.y);
+        ctx.restore();
+    }
+}
+
 class Fire {
     constructor(x, y, intensity) {
         this.x = x;
@@ -233,9 +270,10 @@ class Fire {
         this.smoke = [];
     }
 
-    update() {
-        this.age++;
-        if (this.age % 2 === 0 && this.age < this.maxAge * 0.85) {
+    update(scale) {
+        const s = scale || 1;
+        this.age += s;
+        if (this.age % 2 < s && this.age < this.maxAge * 0.85) {
             this.flames.push({
                 x: this.x + (Math.random() - 0.5) * 22,
                 y: this.y,
@@ -247,7 +285,7 @@ class Fire {
                 flick: Math.random() * TAU
             });
         }
-        if (this.age % 6 === 0 && this.age < this.maxAge) {
+        if (this.age % 6 < s && this.age < this.maxAge) {
             this.smoke.push({
                 x: this.x + (Math.random() - 0.5) * 18,
                 y: this.y - 8,
@@ -259,28 +297,28 @@ class Fire {
             });
         }
         for (const f of this.flames) {
-            f.x += f.vx;
-            f.y += f.vy;
-            f.vy -= 0.03;
-            f.life--;
-            f.flick += 0.35;
+            f.x += f.vx * s;
+            f.y += f.vy * s;
+            f.vy -= 0.03 * s;
+            f.life -= s;
+            f.flick += 0.35 * s;
         }
-        for (const s of this.smoke) {
-            s.x += s.vx;
-            s.y += s.vy;
-            s.size += 0.12;
-            s.life--;
+        for (const sm of this.smoke) {
+            sm.x += sm.vx * s;
+            sm.y += sm.vy * s;
+            sm.size += 0.12 * s;
+            sm.life -= s;
         }
         this.flames = this.flames.filter((f) => f.life > 0);
-        this.smoke = this.smoke.filter((s) => s.life > 0);
+        this.smoke = this.smoke.filter((sm) => sm.life > 0);
     }
 
     render(ctx) {
-        for (const s of this.smoke) {
-            ctx.globalAlpha = (s.life / s.max) * 0.28;
+        for (const sm of this.smoke) {
+            ctx.globalAlpha = (sm.life / sm.max) * 0.28;
             ctx.fillStyle = '#2a2a2e';
             ctx.beginPath();
-            ctx.arc(s.x, s.y, s.size, 0, TAU);
+            ctx.arc(sm.x, sm.y, sm.size, 0, TAU);
             ctx.fill();
         }
         for (const f of this.flames) {
@@ -316,17 +354,16 @@ class FallingDebris {
         this.rot = Math.random() * TAU;
         this.spin = (Math.random() - 0.5) * 0.18;
         this.life = 240;
-        this.ground = 0;
     }
 
-    update(ground) {
-        this.ground = ground;
-        this.x += this.vx;
-        this.y += this.vy;
-        this.vy += 0.38;
+    update(ground, scale) {
+        const s = scale || 1;
+        this.x += this.vx * s;
+        this.y += this.vy * s;
+        this.vy += 0.38 * s;
         this.vx *= 0.995;
-        this.rot += this.spin;
-        this.life--;
+        this.rot += this.spin * s;
+        this.life -= s;
         if (this.y + this.h > ground && this.vy > 0) {
             this.y = ground - this.h;
             this.vy *= -0.28;
@@ -343,9 +380,7 @@ class FallingDebris {
         ctx.fillStyle = this.color;
         ctx.fillRect(-this.w / 2, -this.h / 2, this.w, this.h);
         ctx.fillStyle = 'rgba(255, 214, 120, 0.45)';
-        for (let i = 0; i < 2; i++) {
-            ctx.fillRect(-this.w / 4 + i * 8, -this.h / 5, 3, 3);
-        }
+        for (let i = 0; i < 2; i++) ctx.fillRect(-this.w / 4 + i * 8, -this.h / 5, 3, 3);
         ctx.restore();
     }
 }
@@ -378,10 +413,8 @@ class Building {
     layout(canvasW, ground) {
         this.x = canvasW * this.rx;
         this.width = this.baseW;
-        const lost = this.originalHeight - this.height;
         this.y = ground - this.height;
         this.groundY = ground;
-        if (lost > 0) this.y = ground - this.height;
     }
 
     buildWindows() {
@@ -412,22 +445,20 @@ class Building {
             squid.y > this.y && squid.y < this.y + this.height;
     }
 
-    hit(x, y) {
+    hit(x, y, force) {
         this.hitCount++;
         this.fires.push(new Fire(x, y, 1 + this.hitCount * 0.35));
-        if (Math.random() > 0.45) {
+        if (Math.random() > 0.4) {
             this.fires.push(new Fire(x + (Math.random() - 0.5) * 40, y + (Math.random() - 0.5) * 30, 0.7));
         }
         const rand = mulberry32(this.seed + this.hitCount * 17);
         this.cracks.push({
             x: x - this.x,
             y: y - this.y,
-            paths: Array.from({ length: 3 }, () => ({
-                a: rand() * TAU,
-                len: 12 + rand() * 22
-            }))
+            paths: Array.from({ length: 3 }, () => ({ a: rand() * TAU, len: 12 + rand() * 22 }))
         });
-        if (this.hitCount >= 3) this.startCollapse();
+        if (this.hitCount >= 2 || force > 1.35) this.startCollapse();
+        return this.isCollapsing && this.collapseProgress === 0;
     }
 
     startCollapse() {
@@ -436,15 +467,16 @@ class Building {
         this.collapseProgress = 0;
     }
 
-    update() {
+    update(scale) {
+        const s = scale || 1;
         for (let i = this.fires.length - 1; i >= 0; i--) {
-            this.fires[i].update();
+            this.fires[i].update(s);
             if (this.fires[i].dead) this.fires.splice(i, 1);
         }
         if (!this.isCollapsing) return;
-        this.collapseProgress++;
-        if (this.collapseProgress > 50) {
-            const drop = 6;
+        this.collapseProgress += s;
+        if (this.collapseProgress > 28) {
+            const drop = 8 * s;
             this.height = Math.max(0, this.height - drop);
             this.y += drop;
         }
@@ -475,7 +507,7 @@ class Building {
 
     render(ctx, time) {
         if (this.height <= 0) return;
-        const shakeX = this.isCollapsing && this.collapseProgress < 50 ? (Math.random() - 0.5) * 5 : 0;
+        const shakeX = this.isCollapsing && this.collapseProgress < 28 ? (Math.random() - 0.5) * 6 : 0;
         const x = this.x + shakeX;
 
         ctx.save();
@@ -499,25 +531,13 @@ class Building {
         this.renderWindows(ctx, x, time);
         this.renderCracks(ctx, x);
         this.renderDamage(ctx, x);
-
         for (const fire of this.fires) fire.render(ctx);
-
-        if (this.hitCount > 0 && !this.isCollapsing && this.height > 20) {
-            ctx.fillStyle = 'rgba(0,0,0,0.45)';
-            ctx.fillRect(this.x + this.width / 2 - 14, this.y - 22, 28, 14);
-            ctx.fillStyle = '#ffb4a2';
-            ctx.font = 'bold 11px Trebuchet MS, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(`${this.hitCount}/3`, this.x + this.width / 2, this.y - 11);
-        }
     }
 
     renderArchitecture(ctx, x) {
         const y = this.y;
         const w = this.width;
         const h = this.height;
-        ctx.fillStyle = this.accent;
-
         if (this.type === 'artdeco') {
             const crown = h * 0.28;
             for (let i = 0; i < 5; i++) {
@@ -542,7 +562,6 @@ class Building {
         } else if (this.type === 'supertall' && this.name.includes('Empire')) {
             ctx.fillStyle = shadeHex(this.color, 18);
             ctx.fillRect(x + w * 0.12, y, w * 0.76, h * 0.18);
-            ctx.fillRect(x + w * 0.22, y - 2, w * 0.56, 8);
             ctx.fillStyle = '#c9b37a';
             ctx.fillRect(x + w * 0.46, y - 28, 4, 28);
             ctx.fillStyle = Math.sin(performance.now() / 320) > 0 ? '#ff4d4d' : '#7a1c1c';
@@ -562,9 +581,8 @@ class Building {
             ctx.fillRect(x + w * 0.48, y - 36, 3, 36);
         } else if (this.type === 'bridge') {
             ctx.fillStyle = '#2b2118';
-            const archW = w * 0.62;
             ctx.beginPath();
-            ctx.arc(x + w / 2, y + h * 0.55, archW / 2, Math.PI, 0);
+            ctx.arc(x + w / 2, y + h * 0.55, w * 0.31, Math.PI, 0);
             ctx.fill();
             ctx.fillStyle = this.color;
             ctx.fillRect(x + 6, y + 8, w - 12, 10);
@@ -578,9 +596,7 @@ class Building {
             ctx.fillRect(x, y + h - 16, w, 16);
         } else if (this.type === 'historic') {
             ctx.fillStyle = 'rgba(230, 210, 170, 0.35)';
-            for (let i = 0; i < Math.floor(h / 22); i++) {
-                ctx.fillRect(x, y + h - i * 22 - 3, w, 2);
-            }
+            for (let i = 0; i < Math.floor(h / 22); i++) ctx.fillRect(x, y + h - i * 22 - 3, w, 2);
             ctx.fillRect(x - 3, y + 6, w + 6, 6);
         } else if (this.type === 'modern') {
             ctx.fillStyle = 'rgba(160, 210, 230, 0.12)';
@@ -590,7 +606,6 @@ class Building {
             ctx.fillRect(x, y + 8, w, 6);
             ctx.fillRect(x + 3, y + h - 18, w - 6, 18);
         }
-
         ctx.strokeStyle = 'rgba(255, 176, 90, 0.18)';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -613,10 +628,9 @@ class Building {
                 if (wx < x + w / 2 - half + 2 || wx > x + w / 2 + half - 2) continue;
             }
             const flicker = 0.72 + 0.28 * Math.sin(time * 1.3 + win.phase);
-            const damaged = this.hitCount > 0 && ((win.u * 13 + win.v * 7) % 1) < this.hitCount * 0.18;
-            if (damaged || !win.lit) {
-                ctx.fillStyle = 'rgba(10, 14, 22, 0.65)';
-            } else {
+            const damaged = this.hitCount > 0 && ((win.u * 13 + win.v * 7) % 1) < this.hitCount * 0.28;
+            if (damaged || !win.lit) ctx.fillStyle = 'rgba(10, 14, 22, 0.65)';
+            else {
                 ctx.fillStyle = win.color;
                 ctx.globalAlpha = flicker;
             }
@@ -642,9 +656,7 @@ class Building {
         if (this.hitCount < 1) return;
         ctx.fillStyle = 'rgba(8, 6, 10, 0.35)';
         ctx.fillRect(x + this.width * 0.15, this.y + this.height * 0.2, this.width * 0.2, 7);
-        if (this.hitCount >= 2) {
-            ctx.fillRect(x + this.width * 0.55, this.y + this.height * 0.45, this.width * 0.28, 10);
-        }
+        if (this.hitCount >= 2) ctx.fillRect(x + this.width * 0.55, this.y + this.height * 0.45, this.width * 0.28, 10);
     }
 
     renderReflection(ctx, waterTop, time) {
@@ -666,12 +678,20 @@ class Catapult {
     constructor(x, y) {
         this.x = x;
         this.y = y;
+        this.kick = 0;
     }
 
-    render(ctx, angleDeg) {
+    tip(angleDeg, pull) {
         const a = (angleDeg * Math.PI) / 180;
+        const len = 54 + (pull || 0) * 18;
+        return { x: this.x + Math.cos(a) * len, y: this.y - Math.sin(a) * len, a, len };
+    }
+
+    render(ctx, angleDeg, pull) {
+        const a = (angleDeg * Math.PI) / 180;
+        const extra = (pull || 0) * 16;
         ctx.save();
-        ctx.translate(this.x, this.y);
+        ctx.translate(this.x, this.y + this.kick);
 
         ctx.fillStyle = '#3d2a1a';
         ctx.fillRect(-28, 8, 56, 14);
@@ -682,34 +702,28 @@ class Catapult {
         ctx.arc(-22, 28, 8, 0, TAU);
         ctx.arc(22, 28, 8, 0, TAU);
         ctx.fill();
-        ctx.strokeStyle = '#c9a06a';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(-22, 28, 5, 0, TAU);
-        ctx.arc(22, 28, 5, 0, TAU);
-        ctx.stroke();
 
         ctx.strokeStyle = '#7a5230';
         ctx.lineWidth = 8;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(0, 4);
-        ctx.lineTo(Math.cos(a) * 52, -Math.sin(a) * 52);
+        ctx.lineTo(Math.cos(a) * (52 + extra), -Math.sin(a) * (52 + extra));
         ctx.stroke();
 
-        ctx.strokeStyle = 'rgba(230, 210, 170, 0.65)';
-        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(230, 210, 170, 0.7)';
+        ctx.lineWidth = 1.6;
         ctx.beginPath();
         ctx.moveTo(-16, 10);
-        ctx.lineTo(Math.cos(a) * 40, -Math.sin(a) * 40);
+        ctx.lineTo(Math.cos(a) * (40 + extra), -Math.sin(a) * (40 + extra));
         ctx.lineTo(16, 10);
         ctx.stroke();
 
-        const bx = Math.cos(a) * 54;
-        const by = -Math.sin(a) * 54;
+        const bx = Math.cos(a) * (54 + extra);
+        const by = -Math.sin(a) * (54 + extra);
         ctx.fillStyle = '#2c241c';
         ctx.beginPath();
-        ctx.arc(bx, by, 9, 0, TAU);
+        ctx.arc(bx, by, 10, 0, TAU);
         ctx.fill();
         ctx.strokeStyle = '#d4b483';
         ctx.lineWidth = 2;
@@ -719,17 +733,26 @@ class Catapult {
 }
 
 class Squid {
-    constructor(x, y, vx, vy) {
+    constructor(x, y, vx, vy, pose) {
         this.x = x;
         this.y = y;
-        this.vx = vx;
-        this.vy = vy;
+        this.vx = vx || 0;
+        this.vy = vy || 0;
         this.gravity = 0.3;
         this.rotation = 0;
+        this.spin = 0;
         this.wave = 0;
         this.trail = [];
+        this.pose = pose || 'fly';
+        this.stretch = 1;
+        this.squash = 1;
         this.blink = 0;
         this.closed = false;
+        this.dizzy = 0;
+        this.panic = 0;
+        this.splat = 0;
+        this.facePlant = false;
+        this.bounces = 0;
         this.tentacles = Array.from({ length: 8 }, (_, i) => ({
             a: (i / 8) * TAU,
             len: 18 + (i % 3) * 3,
@@ -737,44 +760,70 @@ class Squid {
         }));
     }
 
-    get speed() {
-        return Math.hypot(this.vx, this.vy);
-    }
+    get speed() { return Math.hypot(this.vx, this.vy); }
 
-    update() {
-        this.trail.push({ x: this.x, y: this.y, a: 0.5 });
-        if (this.trail.length > 14) this.trail.shift();
-        this.x += this.vx;
-        this.y += this.vy;
-        this.vy += this.gravity;
-        this.rotation += 0.1;
-        this.wave += 0.22;
-        this.blink++;
-        if (this.blink > 110) {
+    update(scale) {
+        const s = scale || 1;
+        if (this.pose === 'fly' || this.pose === 'dizzy') {
+            this.trail.push({ x: this.x, y: this.y });
+            if (this.trail.length > 16) this.trail.shift();
+            this.x += this.vx * s;
+            this.y += this.vy * s;
+            this.vy += this.gravity * s;
+            this.spin = lerp(this.spin, (this.vx * 0.02 + this.bounces * 0.15), 0.2);
+            this.rotation += this.spin * s;
+        } else if (this.pose === 'idle' || this.pose === 'charge') {
+            this.wave += 0.12 * s;
+            this.rotation = Math.sin(this.wave * 1.4) * 0.12;
+            this.spin = 0;
+        }
+        this.wave += 0.22 * s;
+        this.blink += s;
+        if (this.blink > 90) {
             this.closed = true;
-            if (this.blink > 118) {
-                this.closed = false;
-                this.blink = 0;
-            }
+            if (this.blink > 98) { this.closed = false; this.blink = 0; }
+        }
+        this.dizzy = Math.max(0, this.dizzy - s);
+        this.panic = Math.max(0, this.panic - s);
+        this.splat = Math.max(0, this.splat - s);
+        const spd = this.speed;
+        if (this.pose === 'fly') {
+            this.stretch = clamp(1 + spd * 0.035, 1, 1.85);
+            this.squash = 1 / Math.sqrt(this.stretch);
+        } else if (this.pose === 'charge') {
+            this.stretch = 1.15 + this.squash * 0.01;
+            this.squash = 0.78;
+        } else if (this.pose === 'splat' || this.facePlant) {
+            this.stretch = 1.45;
+            this.squash = 0.45;
+        } else {
+            this.stretch = 1 + Math.sin(this.wave * 2) * 0.06;
+            this.squash = 1 / this.stretch;
         }
     }
 
     render(ctx) {
         for (let i = 0; i < this.trail.length; i++) {
             const p = this.trail[i];
-            ctx.fillStyle = `rgba(255, 105, 180, ${i / this.trail.length * 0.22})`;
+            ctx.fillStyle = `rgba(255, 105, 180, ${i / this.trail.length * 0.24})`;
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 7 + i * 0.3, 0, TAU);
+            ctx.arc(p.x, p.y, 6 + i * 0.35, 0, TAU);
             ctx.fill();
         }
 
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.rotate(this.rotation);
+        if (this.pose === 'fly' || this.pose === 'dizzy') {
+            ctx.rotate(Math.atan2(this.vy, this.vx) + this.rotation * 0.35);
+        } else {
+            ctx.rotate(this.rotation);
+        }
+        ctx.scale(this.stretch, this.squash);
 
+        const flail = this.pose === 'fly' ? 0.85 : this.pose === 'dizzy' ? 1.2 : this.pose === 'charge' ? 0.25 : 0.2;
         for (const t of this.tentacles) {
-            const wobble = Math.sin(this.wave * 1.6 + t.off) * 0.45;
-            const ang = t.a + wobble;
+            const wobble = Math.sin(this.wave * 2.2 + t.off) * flail;
+            const ang = t.a + wobble + (this.pose === 'fly' ? Math.PI : 0);
             const ex = Math.cos(ang) * t.len;
             const ey = Math.sin(ang) * t.len;
             const g = ctx.createLinearGradient(0, 0, ex, ey);
@@ -785,7 +834,7 @@ class Squid {
             ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(0, 0);
-            ctx.quadraticCurveTo(Math.cos(ang) * t.len * 0.55, Math.sin(ang) * t.len * 0.55 + wobble * 8, ex, ey);
+            ctx.quadraticCurveTo(Math.cos(ang) * t.len * 0.5, Math.sin(ang) * t.len * 0.5 + wobble * 10, ex, ey);
             ctx.stroke();
             ctx.fillStyle = '#ff4da6';
             ctx.beginPath();
@@ -805,39 +854,66 @@ class Squid {
         ctx.lineWidth = 2;
         ctx.stroke();
 
+        this.drawFace(ctx);
+        ctx.restore();
+    }
+
+    drawFace(ctx) {
+        const panic = this.panic > 0 || this.pose === 'dizzy';
+        const splat = this.facePlant || this.pose === 'splat';
         ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.ellipse(-5.5, -3, 5.2, 6.2, 0, 0, TAU);
-        ctx.ellipse(5.5, -3, 5.2, 6.2, 0, 0, TAU);
+        ctx.ellipse(-5.5, -3, panic ? 6.2 : 5.2, panic ? 7.2 : 6.2, 0, 0, TAU);
+        ctx.ellipse(5.5, -3, panic ? 6.2 : 5.2, panic ? 7.2 : 6.2, 0, 0, TAU);
         ctx.fill();
-        if (!this.closed) {
-            const look = ctx.createRadialGradient(-5.5, -3, 0, -5.5, -3, 3.4);
-            look.addColorStop(0, '#7ad7ff');
-            look.addColorStop(1, '#143a8a');
-            ctx.fillStyle = look;
+
+        if (splat) {
+            ctx.strokeStyle = '#1a0d18';
+            ctx.lineWidth = 2.4;
             ctx.beginPath();
-            ctx.arc(-5.5, -3, 3.2, 0, TAU);
-            ctx.arc(5.5, -3, 3.2, 0, TAU);
+            ctx.moveTo(-8, -6); ctx.lineTo(-3, 0); ctx.moveTo(-8, 0); ctx.lineTo(-3, -6);
+            ctx.moveTo(3, -6); ctx.lineTo(8, 0); ctx.moveTo(3, 0); ctx.lineTo(8, -6);
+            ctx.stroke();
+            ctx.fillStyle = '#ff4d88';
+            ctx.beginPath();
+            ctx.ellipse(0, 9, 4, 5, 0, 0, TAU);
+            ctx.fill();
+            return;
+        }
+
+        if (this.closed && !panic) {
+            ctx.strokeStyle = '#c40d66';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-9, -3); ctx.lineTo(-2, -3);
+            ctx.moveTo(2, -3); ctx.lineTo(9, -3);
+            ctx.stroke();
+        } else {
+            ctx.fillStyle = panic ? '#1a2040' : '#143a8a';
+            ctx.beginPath();
+            ctx.arc(-5.5, -3, panic ? 3.6 : 3.2, 0, TAU);
+            ctx.arc(5.5, -3, panic ? 3.6 : 3.2, 0, TAU);
             ctx.fill();
             ctx.fillStyle = '#071226';
             ctx.beginPath();
-            ctx.arc(-5.5, -3, 1.4, 0, TAU);
-            ctx.arc(5.5, -3, 1.4, 0, TAU);
+            ctx.arc(-5.5, -3, panic ? 2 : 1.4, 0, TAU);
+            ctx.arc(5.5, -3, panic ? 2 : 1.4, 0, TAU);
             ctx.fill();
             ctx.fillStyle = '#fff';
             ctx.beginPath();
             ctx.arc(-4, -4.6, 1.3, 0, TAU);
             ctx.arc(7, -4.6, 1.3, 0, TAU);
             ctx.fill();
-        } else {
-            ctx.strokeStyle = '#c40d66';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(-9, -3);
-            ctx.lineTo(-2, -3);
-            ctx.moveTo(2, -3);
-            ctx.lineTo(9, -3);
-            ctx.stroke();
+        }
+
+        if (this.dizzy > 0) {
+            ctx.strokeStyle = '#ffd36a';
+            ctx.lineWidth = 1.6;
+            for (let i = 0; i < 2; i++) {
+                ctx.beginPath();
+                ctx.arc(0, -16, 6 + i * 4, this.wave + i, this.wave + i + 2);
+                ctx.stroke();
+            }
         }
 
         ctx.fillStyle = 'rgba(255, 150, 180, 0.55)';
@@ -847,9 +923,9 @@ class Squid {
         ctx.fill();
         ctx.fillStyle = '#ff4d88';
         ctx.beginPath();
-        ctx.arc(0, 6, 2.6, 0, Math.PI);
+        if (panic) ctx.ellipse(0, 7, 3, 3.4, 0, 0, TAU);
+        else ctx.arc(0, 6, 2.6, 0, Math.PI);
         ctx.fill();
-        ctx.restore();
     }
 }
 
@@ -909,7 +985,9 @@ class SquidNYCGame {
         this.particles = [];
         this.debris = [];
         this.shockwaves = [];
+        this.floaters = [];
         this.squid = null;
+        this.bucket = null;
         this.catapult = null;
         this.launched = false;
         this.ended = false;
@@ -917,20 +995,37 @@ class SquidNYCGame {
         this.dancers = [];
         this.shake = 0;
         this.flash = 0;
-        this.hits = 0;
         this.time = 0;
         this.last = performance.now();
         this.audioUnlocked = false;
+        this.score = 0;
+        this.combo = 1;
+        this.comboLeft = 0;
+        this.best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
+        this.timeScale = 1;
+        this.slowMo = 0;
+        this.cam = { x: 0, y: 0, zoom: 1 };
+        this.charging = false;
+        this.charge = 0;
+        this.spaceHeld = false;
+        this.nearFlags = new Set();
+        this.stamp = null;
+        this.readyIn = 0;
+        this.shotCount = 0;
+        this.newBest = false;
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
         this.bindControls();
-        this.resetWorld();
+        this.resetWorld(true);
         this.loop();
+        this.showCoach(true);
     }
 
     get ground() { return this.canvas.height - 78; }
     get waterTop() { return this.canvas.height - 78; }
+    get angle() { return parseFloat(document.getElementById('angleSlider').value); }
+    get power() { return parseFloat(document.getElementById('powerSlider').value); }
 
     resize() {
         this.canvas.width = window.innerWidth;
@@ -940,25 +1035,43 @@ class SquidNYCGame {
         if (this.buildings[0]) {
             this.catapult = new Catapult(this.buildings[0].x + this.buildings[0].width * 0.55, this.buildings[0].y - 6);
         }
+        this.seatBucket();
     }
 
-    resetWorld() {
+    resetWorld(first) {
         this.buildings = this.createSkyline();
         for (const b of this.buildings) b.layout(this.canvas.width, this.ground);
         this.catapult = new Catapult(this.buildings[0].x + this.buildings[0].width * 0.55, this.buildings[0].y - 6);
         this.particles = [];
         this.debris = [];
         this.shockwaves = [];
+        this.floaters = [];
         this.squid = null;
         this.launched = false;
         this.ended = false;
-        this.hits = 0;
+        this.score = 0;
+        this.combo = 1;
+        this.comboLeft = 0;
         this.shake = 0;
         this.flash = 0;
         this.dancers = [];
+        this.timeScale = 1;
+        this.slowMo = 0;
+        this.nearFlags.clear();
+        this.stamp = null;
+        this.readyIn = 0;
+        this.shotCount = 0;
+        this.newBest = false;
+        this.charging = false;
+        this.charge = 0;
         document.getElementById('controls').style.display = 'block';
-        document.getElementById('fireButton').disabled = false;
+        document.getElementById('retryHint').style.display = 'none';
+        document.getElementById('fireButton').classList.add('ready');
+        this.seatBucket();
         this.updateHud();
+        if (!first && this.best > 0) {
+            this.pop(this.canvas.width / 2, this.canvas.height * 0.28, `BEAT ${this.best}`, '#9ad7ff', 34);
+        }
     }
 
     createSkyline() {
@@ -983,45 +1096,52 @@ class SquidNYCGame {
         ];
     }
 
+    seatBucket() {
+        if (!this.catapult) return;
+        const tip = this.catapult.tip(this.angle, this.charging ? this.charge : 0);
+        if (!this.bucket) this.bucket = new Squid(tip.x, tip.y, 0, 0, 'idle');
+        this.bucket.x = tip.x;
+        this.bucket.y = tip.y;
+        this.bucket.pose = this.charging ? 'charge' : 'idle';
+        this.bucket.squash = this.charging ? 0.72 : 1;
+    }
+
     bindControls() {
         const angle = document.getElementById('angleSlider');
         const power = document.getElementById('powerSlider');
-        const fire = document.getElementById('fireButton');
-
         const sync = () => {
             document.getElementById('angleValue').textContent = angle.value;
             document.getElementById('powerValue').textContent = power.value;
+            this.seatBucket();
         };
         angle.addEventListener('input', sync);
         power.addEventListener('input', sync);
-        fire.addEventListener('click', () => this.launch());
-
-        document.getElementById('playMusicBtn').addEventListener('click', () => {
+        document.getElementById('fireButton').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.tryLaunch();
+        });
+        document.getElementById('muteBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
             this.unlockAudio();
-            this.audio.startMusic();
-            this.refreshMusicUi();
-        });
-        document.getElementById('pauseMusicBtn').addEventListener('click', () => {
-            this.audio.pauseMusic();
-            this.refreshMusicUi();
-        });
-        document.getElementById('muteBtn').addEventListener('click', () => {
             const muted = this.audio.toggleMute();
-            const btn = document.getElementById('muteBtn');
-            btn.textContent = muted ? 'Unmute' : 'Mute';
-            btn.classList.toggle('active', muted);
+            e.currentTarget.textContent = muted ? 'Unmute' : 'Mute';
+            e.currentTarget.classList.toggle('active', muted);
         });
-        document.getElementById('nextSongBtn').addEventListener('click', () => {
+        document.getElementById('nextSongBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
             this.unlockAudio();
             this.audio.nextSong();
             this.audio.playUI('next');
-            this.refreshMusicUi();
         });
-        document.getElementById('volumeSlider').addEventListener('input', (e) => {
-            this.audio.setVolume(e.target.value);
+        ['controls', 'radio', 'hud'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('pointerdown', (e) => e.stopPropagation());
         });
 
-        window.addEventListener('pointerdown', () => this.unlockAudio(), { once: false });
+        this.canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+        window.addEventListener('pointermove', (e) => this.onPointerMove(e));
+        window.addEventListener('pointerup', (e) => this.onPointerUp(e));
+
         window.addEventListener('keydown', (e) => {
             this.unlockAudio();
             const key = e.key.toLowerCase();
@@ -1029,13 +1149,31 @@ class SquidNYCGame {
             if (key === 'arrowright' || key === 'd') this.nudge('angle', 1);
             if (key === 'arrowup' || key === 'w') this.nudge('power', 1);
             if (key === 'arrowdown' || key === 's') this.nudge('power', -1);
-            if (e.code === 'Space') { e.preventDefault(); this.launch(); }
-            if (key === 'r') this.resetWorld();
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (this.ended) { this.resetWorld(false); return; }
+                if (this.launched || this.readyIn > 0) return;
+                if (!this.spaceHeld) {
+                    this.spaceHeld = true;
+                    this.charging = true;
+                    this.charge = Math.max(0.15, (this.power - 18) / 82);
+                    this.canvas.classList.add('charging');
+                }
+            }
+            if (key === 'r') this.resetWorld(false);
             if (key === 'm') document.getElementById('muteBtn').click();
-            if (key === 'n') document.getElementById('nextSongBtn').click();
         });
-
-        this.refreshMusicUi();
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space' && this.spaceHeld) {
+                this.spaceHeld = false;
+                if (this.charging && !this.launched) {
+                    this.setPowerFromCharge();
+                    this.tryLaunch();
+                }
+                this.charging = false;
+                this.canvas.classList.remove('charging');
+            }
+        });
     }
 
     nudge(which, dir) {
@@ -1044,47 +1182,110 @@ class SquidNYCGame {
         el.dispatchEvent(new Event('input'));
     }
 
+    pointerInGame(e) {
+        const r = this.canvas.getBoundingClientRect();
+        return { x: (e.clientX - r.left) * (this.canvas.width / r.width), y: (e.clientY - r.top) * (this.canvas.height / r.height) };
+    }
+
+    onPointerDown(e) {
+        this.unlockAudio();
+        if (this.ended) { this.resetWorld(false); return; }
+        if (this.launched || this.readyIn > 0) return;
+        this.charging = true;
+        this.charge = 0.2;
+        this.canvas.classList.add('charging');
+        this.aimFromPointer(this.pointerInGame(e));
+    }
+
+    onPointerMove(e) {
+        if (!this.charging || this.launched) return;
+        this.aimFromPointer(this.pointerInGame(e));
+    }
+
+    onPointerUp() {
+        if (!this.charging || this.spaceHeld) return;
+        if (!this.launched && this.readyIn <= 0 && !this.ended) {
+            this.setPowerFromCharge();
+            this.tryLaunch();
+        }
+        this.charging = false;
+        this.canvas.classList.remove('charging');
+    }
+
+    aimFromPointer(p) {
+        if (!this.catapult) return;
+        const dx = p.x - this.catapult.x;
+        const dy = this.catapult.y - p.y;
+        let deg = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (dx < 0) deg = clamp(90 + (p.y - this.catapult.y) * 0.08, 12, 82);
+        document.getElementById('angleSlider').value = String(Math.round(clamp(deg, 12, 82)));
+        const pull = clamp(Math.hypot(dx, dy) / 420, 0.12, 1);
+        this.charge = pull;
+        this.setPowerFromCharge();
+        document.getElementById('angleSlider').dispatchEvent(new Event('input'));
+    }
+
+    setPowerFromCharge() {
+        const p = Math.round(18 + this.charge * 82);
+        document.getElementById('powerSlider').value = String(clamp(p, 18, 100));
+        document.getElementById('powerValue').textContent = document.getElementById('powerSlider').value;
+    }
+
     unlockAudio() {
         if (this.audioUnlocked) return;
         this.audioUnlocked = true;
-        this.audio.unlock().then(() => {
-            this.audio.startMusic();
-            this.refreshMusicUi();
-            document.getElementById('unlockBanner').style.display = 'none';
-        });
+        this.audio.unlock().then(() => this.audio.startMusic());
     }
 
-    refreshMusicUi() {
-        document.getElementById('songTitle').textContent = this.audio.getCurrentSongName();
-        document.getElementById('playMusicBtn').classList.toggle('active', this.audio.isPlaying);
-        document.getElementById('pauseMusicBtn').classList.toggle('active', !this.audio.isPlaying);
-        if (!this.audioUnlocked) document.getElementById('unlockBanner').style.display = 'block';
+    showCoach(on) {
+        document.getElementById('coach').style.display = on ? 'block' : 'none';
+    }
+
+    tryLaunch() {
+        if (this.ended) { this.resetWorld(false); return; }
+        if (this.launched || this.readyIn > 0) return;
+        this.launch();
     }
 
     launch() {
-        if (this.launched || this.ended) return;
         this.unlockAudio();
-        this.audio.playUI('fire');
-        const angle = parseFloat(document.getElementById('angleSlider').value);
-        const power = parseFloat(document.getElementById('powerSlider').value);
-        const speed = (power / 100) * 26;
-        const rad = (angle * Math.PI) / 180;
-        const tipX = this.catapult.x + Math.cos(rad) * 54;
-        const tipY = this.catapult.y - Math.sin(rad) * 54;
-        this.squid = new Squid(tipX, tipY, speed * Math.cos(rad), -speed * Math.sin(rad));
+        this.showCoach(false);
+        const pull = this.charging ? this.charge : (this.power - 18) / 82;
+        const tip = this.catapult.tip(this.angle, pull);
+        const speed = (this.power / 100) * 27;
+        const rad = (this.angle * Math.PI) / 180;
+        this.squid = new Squid(tip.x, tip.y, speed * Math.cos(rad), -speed * Math.sin(rad), 'fly');
         this.launched = true;
-        document.getElementById('fireButton').disabled = true;
+        this.shotCount++;
+        this.charging = false;
+        this.spaceHeld = false;
+        this.canvas.classList.remove('charging');
+        this.catapult.kick = 10;
+        this.shake = 4;
         this.audio.playLaunch();
+        document.getElementById('fireButton').classList.remove('ready');
+        this.nearFlags.clear();
+    }
+
+    readyAgain(delay) {
+        this.launched = false;
+        this.readyIn = delay || 0.12;
+        this.audio.stopWhoosh();
+        if (this.squid) {
+            this.squid.vx = 0;
+            this.squid.vy = 0;
+            this.squid.pose = 'splat';
+        }
+        this.seatBucket();
     }
 
     predictPath() {
         if (this.launched || this.ended) return [];
-        const angle = parseFloat(document.getElementById('angleSlider').value);
-        const power = parseFloat(document.getElementById('powerSlider').value);
-        const speed = (power / 100) * 26;
-        const rad = (angle * Math.PI) / 180;
-        let x = this.catapult.x + Math.cos(rad) * 54;
-        let y = this.catapult.y - Math.sin(rad) * 54;
+        const speed = (this.power / 100) * 27;
+        const rad = (this.angle * Math.PI) / 180;
+        const tip = this.catapult.tip(this.angle, this.charging ? this.charge : 0);
+        let x = tip.x;
+        let y = tip.y;
         let vx = speed * Math.cos(rad);
         let vy = -speed * Math.sin(rad);
         const pts = [];
@@ -1098,48 +1299,165 @@ class SquidNYCGame {
         return pts;
     }
 
+    pop(x, y, text, color, size) {
+        this.floaters.push(new Floater(text, x, y, color, size));
+    }
+
+    flashStamp(text, color) {
+        this.stamp = { text, color: color || '#fff6d8', life: 1 };
+    }
+
+    addScore(n, x, y, label) {
+        const gained = Math.round(n * this.combo);
+        this.score += gained;
+        if (gained > 0) this.pop(x, y - 18, `${label ? label + ' ' : ''}+${gained}`, '#ffe08a', 20 + Math.min(16, this.combo * 3));
+        if (this.score > this.best) {
+            this.best = this.score;
+            localStorage.setItem(BEST_KEY, String(this.best));
+            if (!this.newBest && this.shotCount > 0) {
+                this.newBest = true;
+                this.audio.playBest();
+                this.pop(this.canvas.width / 2, this.canvas.height * 0.2, 'NEW BEST', '#f0c14b', 40);
+            }
+        }
+        this.updateHud();
+    }
+
+    bumpCombo() {
+        this.combo += 1;
+        this.comboLeft = 2.4;
+        this.audio.playCombo(this.combo);
+        this.updateHud();
+    }
+
+    checkNearMiss() {
+        if (!this.squid || this.squid.pose !== 'fly') return;
+        for (let i = 1; i < this.buildings.length; i++) {
+            const b = this.buildings[i];
+            if (b.height <= 10 || this.nearFlags.has(b)) continue;
+            const d = distToRect(this.squid.x, this.squid.y, b.x, b.y, b.width, b.height);
+            if (d > 0 && d < 38) {
+                this.nearFlags.add(b);
+                this.slowMo = 0.42;
+                this.timeScale = 0.28;
+                this.squid.panic = 40;
+                this.audio.playNearMiss();
+                this.flashStamp('SO CLOSE', '#ffd36a');
+                this.pop(this.squid.x, this.squid.y - 24, 'so close', '#ffd36a', 26);
+            }
+        }
+    }
+
+    bounceOff(building) {
+        const fromLeft = this.squid.x - building.x;
+        const fromRight = building.x + building.width - this.squid.x;
+        const fromTop = this.squid.y - building.y;
+        const fromBottom = building.y + building.height - this.squid.y;
+        const m = Math.min(fromLeft, fromRight, fromTop, fromBottom);
+        if (m === fromTop) {
+            this.squid.vy = -Math.abs(this.squid.vy) * 0.82 - 2;
+            this.squid.y = building.y - 12;
+        } else if (m === fromBottom) {
+            this.squid.vy = Math.abs(this.squid.vy) * 0.55;
+            this.squid.y = building.y + building.height + 12;
+        } else if (m === fromLeft) {
+            this.squid.vx = -Math.abs(this.squid.vx) * 0.78;
+            this.squid.x = building.x - 12;
+        } else {
+            this.squid.vx = Math.abs(this.squid.vx) * 0.78;
+            this.squid.x = building.x + building.width + 12;
+        }
+        this.squid.bounces += 1;
+        this.squid.dizzy = 50;
+        this.squid.pose = 'dizzy';
+        this.squid.splat = 10;
+    }
+
     checkCollisions() {
-        if (!this.squid) return;
+        if (!this.squid || this.squid.pose === 'splat') return;
         for (let i = 0; i < this.buildings.length; i++) {
             const building = this.buildings[i];
             if (!building.checkCollision(this.squid)) continue;
             if (building.protected) {
-                this.squid.vx *= -0.28;
-                this.squid.vy *= -0.45;
-                this.squid.x += this.squid.vx * 2;
+                this.audio.playBonk();
+                this.flashStamp('BONK', '#ffb4a2');
+                this.bounceOff(building);
+                this.squid.vx *= 0.7;
+                this.pop(this.squid.x, this.squid.y, 'warehouse says no', '#ffb4a2', 18);
                 continue;
             }
-            const intensity = 0.7 + this.squid.speed * 0.035;
-            const pan = (this.squid.x / this.canvas.width) * 2 - 1;
-            this.audio.playImpact(building.type, intensity, pan);
-            this.destroyAt(building, this.squid);
-            if (building.isCollapsing && building.collapseProgress === 0) {
-                this.audio.playCollapse(pan);
-            }
-            this.squid = null;
-            this.launched = false;
-            document.getElementById('fireButton').disabled = false;
-            this.audio.stopWhoosh();
+            this.smash(building);
             return;
         }
 
-        if (this.squid.y > this.ground) {
-            const pan = (this.squid.x / this.canvas.width) * 2 - 1;
-            this.audio.playSplash(pan);
-            this.spawnSplash(this.squid.x, this.ground);
-            this.squid = null;
-            this.launched = false;
-            document.getElementById('fireButton').disabled = false;
+        if (this.squid.y > this.ground) this.kerSploosh();
+        else if (this.squid.x > this.canvas.width + 40 || this.squid.x < -80) {
+            this.audio.playWhoops();
+            this.flashStamp('GONE', '#9ad7ff');
+            this.combo = 1;
+            this.updateHud();
+            this.readyAgain(0.18);
         }
     }
 
-    destroyAt(building, squid) {
-        this.hits++;
-        this.shake = Math.min(18, 7 + squid.speed * 0.35);
-        this.flash = 0.55;
-        this.shockwaves.push(new Shockwave(squid.x, squid.y, 90 + squid.speed * 3));
+    smash(building) {
+        const intensity = 0.7 + this.squid.speed * 0.035;
+        const pan = (this.squid.x / this.canvas.width) * 2 - 1;
+        const force = Math.min(2, intensity);
+        const collapsing = building.hit(this.squid.x, this.squid.y, force);
+        this.audio.playImpact(building.type, intensity, pan);
+        this.audio.playSplat();
+        if (this.combo > 1) this.audio.playCrowd();
+        this.shake = Math.min(22, 8 + this.squid.speed * 0.4);
+        this.flash = 0.7;
+        this.shockwaves.push(new Shockwave(this.squid.x, this.squid.y, 100 + this.squid.speed * 3));
+        this.spawnJunk(building, this.squid, collapsing);
+        const distBonus = 1 + building.rx;
+        const heightBonus = 1 + building.originalHeight / 400;
+        this.addScore(120 * distBonus * heightBonus * (1 + this.squid.speed * 0.04), this.squid.x, this.squid.y, collapsing ? 'DOWN' : 'WHACK');
+        this.bumpCombo();
+        if (collapsing) {
+            this.audio.playCollapse(pan);
+            this.addScore(420 * heightBonus, building.x + building.width / 2, building.y, 'COLLAPSE');
+            this.flashStamp(building.name.split(' ')[0].toUpperCase() + '!', '#ff8ad4');
+        } else {
+            this.flashStamp(this.combo > 2 ? `x${this.combo}` : 'SLAP', '#ffd36a');
+        }
 
-        const chunks = 2 + Math.floor(Math.random() * 3);
+        const canChain = this.squid.speed > 9 && this.squid.bounces < 3 && !collapsing;
+        if (canChain) {
+            this.bounceOff(building);
+            this.squid.pose = 'dizzy';
+            this.pop(this.squid.x, this.squid.y + 20, 'rico!', '#ff8ad4', 22);
+            return;
+        }
+
+        this.squid.pose = 'splat';
+        this.squid.facePlant = false;
+        this.squid.vx = 0;
+        this.squid.vy = 0;
+        this.readyAgain(0.22);
+    }
+
+    kerSploosh() {
+        const pan = (this.squid.x / this.canvas.width) * 2 - 1;
+        this.audio.playSplash(pan);
+        this.audio.playWhoops();
+        this.audio.playSplat();
+        this.squid.y = this.ground - 4;
+        this.squid.pose = 'splat';
+        this.squid.facePlant = true;
+        this.spawnSplash(this.squid.x, this.ground);
+        this.flashStamp('KER-SPLOOSH', '#9ad7ff');
+        this.pop(this.squid.x, this.ground - 30, 'face-plant', '#9ad7ff', 24);
+        this.shake = 6;
+        this.combo = 1;
+        this.updateHud();
+        this.readyAgain(0.28);
+    }
+
+    spawnJunk(building, squid, collapsing) {
+        const chunks = collapsing ? 5 : 2 + Math.floor(Math.random() * 3);
         for (let i = 0; i < chunks; i++) {
             this.debris.push(new FallingDebris(
                 building.x + (building.width / chunks) * i,
@@ -1148,35 +1466,31 @@ class SquidNYCGame {
                 Math.min(54, building.height * 0.18),
                 building.color,
                 building.type,
-                (Math.random() - 0.5) * 7,
-                -2 - Math.random() * 3
+                (Math.random() - 0.5) * 8,
+                -2 - Math.random() * 4
             ));
         }
-
-        building.hit(squid.x, squid.y);
-        const n = building.isCollapsing ? 70 : 28;
+        const n = collapsing ? 80 : 34;
         for (let i = 0; i < n; i++) {
-            const kind = Math.random() > 0.7 ? 'spark' : (building.type === 'modern' || building.type === 'supertall') && Math.random() > 0.5 ? 'glass' : 'dust';
+            const kind = Math.random() > 0.65 ? 'spark' : (building.type === 'modern' || building.type === 'supertall') && Math.random() > 0.5 ? 'glass' : 'dust';
             this.particles.push(new Particle(
-                squid.x,
-                squid.y,
-                (Math.random() - 0.5) * (building.isCollapsing ? 16 : 9),
-                (Math.random() - 0.5) * (building.isCollapsing ? 14 : 8) - 2,
+                squid.x, squid.y,
+                (Math.random() - 0.5) * (collapsing ? 18 : 10),
+                (Math.random() - 0.5) * (collapsing ? 16 : 9) - 2,
                 kind === 'glass' ? '#b7ecff' : kind === 'spark' ? '#ffd36a' : building.color,
                 30 + Math.random() * 30,
                 2 + Math.random() * 3.5,
                 kind
             ));
         }
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 10; i++) {
             this.particles.push(new Particle(squid.x, squid.y, (Math.random() - 0.5) * 2, -1 - Math.random(), '#3a3a40', 50, 8, 'smoke'));
         }
-        this.updateHud();
     }
 
     spawnSplash(x, y) {
-        for (let i = 0; i < 18; i++) {
-            this.particles.push(new Particle(x, y, (Math.random() - 0.5) * 6, -2 - Math.random() * 5, '#9ad4ff', 28, 2.4, 'dust'));
+        for (let i = 0; i < 26; i++) {
+            this.particles.push(new Particle(x, y, (Math.random() - 0.5) * 8, -3 - Math.random() * 7, '#9ad4ff', 32, 2.6, 'dust'));
         }
     }
 
@@ -1189,26 +1503,62 @@ class SquidNYCGame {
     }
 
     updateHud() {
-        document.getElementById('standingCount').textContent = String(this.standingCount());
-        document.getElementById('hitCount').textContent = String(this.hits);
+        document.getElementById('scoreValue').textContent = String(this.score);
+        document.getElementById('bestValue').textContent = String(this.best);
+        document.getElementById('comboValue').textContent = `x${this.combo}`;
     }
 
     startCelebration() {
         this.ended = true;
         this.celebrateT = 0;
         this.dancers = [
-            new Dancer(this.canvas.width * 0.32, this.canvas.height * 0.5, 330),
-            new Dancer(this.canvas.width * 0.68, this.canvas.height * 0.5, 275)
+            new Dancer(this.canvas.width * 0.32, this.canvas.height * 0.52, 330),
+            new Dancer(this.canvas.width * 0.68, this.canvas.height * 0.52, 275)
         ];
         document.getElementById('controls').style.display = 'none';
+        document.getElementById('retryHint').style.display = 'block';
         this.audio.playVictory();
+        if (this.score >= this.best) this.audio.playBest();
     }
 
     update(dt) {
         this.time += dt;
         this.atmosphere.update(dt);
+        if (this.slowMo > 0) {
+            this.slowMo -= dt;
+            if (this.slowMo <= 0) this.timeScale = 1;
+        }
+        const s = this.timeScale;
         this.shake *= 0.86;
         this.flash *= 0.9;
+        if (this.catapult) this.catapult.kick *= 0.8;
+        if (this.readyIn > 0) {
+            this.readyIn -= dt;
+            if (this.readyIn <= 0) {
+                this.squid = null;
+                document.getElementById('fireButton').classList.add('ready');
+            }
+        }
+        if (this.comboLeft > 0) {
+            this.comboLeft -= dt;
+            if (this.comboLeft <= 0 && this.combo > 1) {
+                this.combo = 1;
+                this.updateHud();
+            }
+        }
+        if (this.stamp) {
+            this.stamp.life -= dt * 1.6;
+            if (this.stamp.life <= 0) this.stamp = null;
+        }
+        if (this.charging && this.spaceHeld) {
+            this.charge = clamp(this.charge + dt * 0.85, 0.12, 1);
+            this.setPowerFromCharge();
+            if (Math.random() < 0.25) this.audio.playCharge(this.charge);
+        }
+
+        this.cam.zoom = lerp(this.cam.zoom, this.slowMo > 0 ? 1.08 : this.charging ? 1.03 : 1, 0.12);
+        this.cam.x = lerp(this.cam.x, this.squid && this.launched ? (this.squid.x - this.canvas.width * 0.42) * 0.12 : 0, 0.08);
+        this.cam.y = lerp(this.cam.y, this.squid && this.launched ? (this.squid.y - this.canvas.height * 0.45) * 0.08 : 0, 0.08);
 
         if (this.ended) {
             this.celebrateT++;
@@ -1216,24 +1566,32 @@ class SquidNYCGame {
             return;
         }
 
-        if (this.squid) {
-            this.squid.update();
-            this.audio.updateWhoosh(this.squid.speed);
-        }
-        this.checkCollisions();
+        this.seatBucket();
+        if (this.bucket) this.bucket.update(1);
 
-        for (const b of this.buildings) b.update();
+        if (this.squid && this.launched) {
+            this.squid.update(s);
+            this.audio.updateWhoosh(this.squid.speed);
+            this.checkNearMiss();
+            this.checkCollisions();
+        }
+
+        for (const b of this.buildings) b.update(s);
         for (let i = this.particles.length - 1; i >= 0; i--) {
-            this.particles[i].update();
+            this.particles[i].update(s);
             if (this.particles[i].life <= 0) this.particles.splice(i, 1);
         }
         for (let i = this.debris.length - 1; i >= 0; i--) {
-            this.debris[i].update(this.ground);
-            if (this.debris[i].life <= 0 || this.debris[i].y > this.canvas.height) this.debris.splice(i, 1);
+            this.debris[i].update(this.ground, s);
+            if (this.debris[i].life <= 0) this.debris.splice(i, 1);
         }
         for (let i = this.shockwaves.length - 1; i >= 0; i--) {
-            this.shockwaves[i].update();
+            this.shockwaves[i].update(s);
             if (this.shockwaves[i].dead) this.shockwaves.splice(i, 1);
+        }
+        for (let i = this.floaters.length - 1; i >= 0; i--) {
+            this.floaters[i].update(dt);
+            if (this.floaters[i].life <= 0) this.floaters.splice(i, 1);
         }
 
         if (this.standingCount() === 0) this.startCelebration();
@@ -1248,9 +1606,7 @@ class SquidNYCGame {
         g.addColorStop(1, '#071018');
         this.ctx.fillStyle = g;
         this.ctx.fillRect(0, y, this.canvas.width, h);
-
         for (const b of this.buildings) b.renderReflection(this.ctx, y, this.time);
-
         this.ctx.save();
         this.ctx.globalAlpha = 0.22;
         this.ctx.strokeStyle = '#d7f3ff';
@@ -1266,7 +1622,6 @@ class SquidNYCGame {
             this.ctx.stroke();
         }
         this.ctx.restore();
-
         const sheen = this.ctx.createLinearGradient(0, y, 0, y + 16);
         sheen.addColorStop(0, 'rgba(255, 200, 130, 0.28)');
         sheen.addColorStop(1, 'rgba(255, 200, 130, 0)');
@@ -1279,13 +1634,11 @@ class SquidNYCGame {
         this.ctx.fillStyle = '#2a241c';
         this.ctx.fillRect(0, y, this.canvas.width * 0.13, 18);
         this.ctx.fillStyle = '#3b3226';
-        for (let i = 0; i < 6; i++) {
-            this.ctx.fillRect(18 + i * 28, y + 16, 7, this.canvas.height - y);
-        }
-        this.ctx.fillStyle = '#d9b56a';
-        this.ctx.font = 'bold 11px Trebuchet MS, sans-serif';
-        this.ctx.textAlign = 'left';
+        for (let i = 0; i < 6; i++) this.ctx.fillRect(18 + i * 28, y + 16, 7, this.canvas.height - y);
         if (this.buildings[0]) {
+            this.ctx.fillStyle = '#d9b56a';
+            this.ctx.font = 'bold 11px Trebuchet MS, sans-serif';
+            this.ctx.textAlign = 'left';
             this.ctx.fillText('SQUID CO.', this.buildings[0].x + 14, this.buildings[0].y + 28);
         }
     }
@@ -1319,20 +1672,31 @@ class SquidNYCGame {
         const pts = this.predictPath();
         if (pts.length < 2) return;
         this.ctx.save();
-        this.ctx.strokeStyle = 'rgba(255, 214, 120, 0.55)';
+        this.ctx.strokeStyle = this.charging ? 'rgba(255, 140, 200, 0.75)' : 'rgba(255, 214, 120, 0.55)';
         this.ctx.setLineDash([5, 7]);
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = this.charging ? 3 : 2;
         this.ctx.beginPath();
         pts.forEach((p, i) => i === 0 ? this.ctx.moveTo(p.x, p.y) : this.ctx.lineTo(p.x, p.y));
         this.ctx.stroke();
         this.ctx.setLineDash([]);
-        for (let i = 6; i < pts.length; i += 8) {
-            this.ctx.fillStyle = 'rgba(255, 230, 160, 0.7)';
-            this.ctx.beginPath();
-            this.ctx.arc(pts[i].x, pts[i].y, 2.2, 0, TAU);
-            this.ctx.fill();
-        }
         this.ctx.restore();
+    }
+
+    renderStamp() {
+        if (!this.stamp) return;
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.globalAlpha = clamp(this.stamp.life * 1.4, 0, 1);
+        ctx.translate(this.canvas.width / 2, this.canvas.height * 0.36);
+        ctx.rotate(-0.08);
+        ctx.font = '800 64px Trebuchet MS, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = 8;
+        ctx.strokeText(this.stamp.text, 0, 0);
+        ctx.fillStyle = this.stamp.color;
+        ctx.fillText(this.stamp.text, 0, 0);
+        ctx.restore();
     }
 
     renderVignette() {
@@ -1350,6 +1714,12 @@ class SquidNYCGame {
         const ctx = this.ctx;
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         ctx.save();
+        ctx.translate(-this.cam.x, -this.cam.y);
+        if (this.cam.zoom !== 1) {
+            ctx.translate(this.canvas.width / 2, this.canvas.height / 2);
+            ctx.scale(this.cam.zoom, this.cam.zoom);
+            ctx.translate(-this.canvas.width / 2, -this.canvas.height / 2);
+        }
         if (this.shake > 0.4) {
             ctx.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
         }
@@ -1363,26 +1733,27 @@ class SquidNYCGame {
         this.renderCables();
 
         for (const b of this.buildings) b.render(ctx, this.time);
-        if (this.catapult) {
-            this.catapult.render(ctx, parseFloat(document.getElementById('angleSlider').value));
-        }
+        if (this.catapult) this.catapult.render(ctx, this.angle, this.charging ? this.charge : 0);
         this.renderTrajectory();
+        if (!this.launched && this.bucket) this.bucket.render(ctx);
         if (this.squid) this.squid.render(ctx);
         for (const d of this.debris) d.render(ctx);
         for (const p of this.particles) p.render(ctx);
         for (const s of this.shockwaves) s.render(ctx);
+        for (const f of this.floaters) f.render(ctx);
 
         this.renderVignette();
         if (this.flash > 0.02) {
             ctx.fillStyle = `rgba(255, 210, 140, ${this.flash * 0.45})`;
-            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            ctx.fillRect(-40, -40, this.canvas.width + 80, this.canvas.height + 80);
         }
         ctx.restore();
+        this.renderStamp();
     }
 
     renderCelebration() {
         const ctx = this.ctx;
-        ctx.fillStyle = 'rgba(6, 4, 12, 0.82)';
+        ctx.fillStyle = 'rgba(6, 4, 12, 0.78)';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         for (let i = 0; i < 40; i++) {
             const x = this.canvas.width / 2 + Math.sin(this.celebrateT * 0.03 + i) * 240;
@@ -1393,19 +1764,22 @@ class SquidNYCGame {
             ctx.fill();
         }
         ctx.textAlign = 'center';
-        ctx.font = 'bold 64px Trebuchet MS, sans-serif';
+        ctx.font = 'bold 58px Trebuchet MS, sans-serif';
         ctx.fillStyle = '#f0c14b';
         ctx.shadowColor = '#ff6b35';
         ctx.shadowBlur = 18;
-        ctx.fillText('HARBOR CLEARED', this.canvas.width / 2, this.canvas.height * 0.22);
+        ctx.fillText(this.newBest ? 'NEW BEST' : 'HARBOR CLEARED', this.canvas.width / 2, this.canvas.height * 0.2);
         ctx.shadowBlur = 0;
-        ctx.font = '24px Trebuchet MS, sans-serif';
+        ctx.font = '28px Trebuchet MS, sans-serif';
+        ctx.fillStyle = '#fff6d8';
+        ctx.fillText(`${this.score}`, this.canvas.width / 2, this.canvas.height * 0.3);
+        ctx.font = '18px Trebuchet MS, sans-serif';
         ctx.fillStyle = '#9ad7ff';
-        ctx.fillText('NYC has been liberated by squid', this.canvas.width / 2, this.canvas.height * 0.3);
+        ctx.fillText(this.best ? `beat this: ${this.best}` : 'first clear — now do it louder', this.canvas.width / 2, this.canvas.height * 0.36);
         for (const d of this.dancers) d.render(ctx);
         ctx.fillStyle = '#fff';
-        ctx.font = '18px Trebuchet MS, sans-serif';
-        ctx.fillText('Press R to rebuild the skyline', this.canvas.width / 2, this.canvas.height * 0.86);
+        ctx.font = '20px Trebuchet MS, sans-serif';
+        ctx.fillText('Space / click — one more', this.canvas.width / 2, this.canvas.height * 0.86);
     }
 
     loop() {

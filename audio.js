@@ -628,6 +628,148 @@ class SquidAudio {
         });
     }
 
+    tone(freq, dur, type, vol, when) {
+        if (!this.ctx) return;
+        const t = when || this.now();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type || 'square';
+        osc.frequency.setValueAtTime(freq, t);
+        gain.gain.setValueAtTime(vol || 0.12, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+        osc.start(t);
+        osc.stop(t + dur + 0.02);
+        return osc;
+    }
+
+    playCharge(amount) {
+        if (!this.ready || this.muted) return;
+        this.unlock();
+        const t = this.now();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(90 + amount * 420, t);
+        gain.gain.setValueAtTime(0.04 + amount * 0.08, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+        osc.start(t);
+        osc.stop(t + 0.09);
+    }
+
+    playBonk() {
+        if (!this.ready || this.muted) return;
+        this.unlock();
+        const t = this.now();
+        this.tone(180, 0.09, 'square', 0.22, t);
+        this.tone(90, 0.14, 'triangle', 0.18, t);
+        const noise = this.noiseSource(0.08);
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.16, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+        noise.connect(g);
+        g.connect(this.sfxGain);
+        noise.start(t);
+    }
+
+    playNearMiss() {
+        if (!this.ready || this.muted) return;
+        this.unlock();
+        const t = this.now();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, t);
+        osc.frequency.exponentialRampToValueAtTime(140, t + 0.38);
+        gain.gain.setValueAtTime(0.16, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+        osc.start(t);
+        osc.stop(t + 0.42);
+        this.tone(196, 0.18, 'triangle', 0.1, t + 0.22);
+        this.tone(147, 0.22, 'triangle', 0.08, t + 0.32);
+    }
+
+    playSplat() {
+        if (!this.ready || this.muted) return;
+        this.unlock();
+        this.stopWhoosh();
+        const t = this.now();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(220, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.22);
+        gain.gain.setValueAtTime(0.28, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+        osc.start(t);
+        osc.stop(t + 0.26);
+        const noise = this.noiseSource(0.2);
+        const f = this.ctx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = 500;
+        const ng = this.ctx.createGain();
+        ng.gain.setValueAtTime(0.22, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        noise.connect(f);
+        f.connect(ng);
+        ng.connect(this.sfxGain);
+        noise.start(t);
+    }
+
+    playWhoops() {
+        if (!this.ready || this.muted) return;
+        this.unlock();
+        const t = this.now();
+        [330, 262, 196].forEach((freq, i) => this.tone(freq, 0.14, 'square', 0.1, t + i * 0.07));
+    }
+
+    playCombo(n) {
+        if (!this.ready || this.muted) return;
+        this.unlock();
+        const t = this.now();
+        const notes = ['C5', 'E5', 'G5', 'C6', 'E6'];
+        const note = notes[Math.min(n, notes.length) - 1] || 'C6';
+        this.tone(this.noteFreq(note), 0.16, 'triangle', 0.16, t);
+        this.tone(this.noteFreq(note) * 1.5, 0.1, 'square', 0.06, t + 0.04);
+    }
+
+    playBest() {
+        if (!this.ready || this.muted) return;
+        this.unlock();
+        const t = this.now();
+        ['G5', 'B5', 'D6', 'G6'].forEach((n, i) => this.tone(this.noteFreq(n), 0.2, 'triangle', 0.18, t + i * 0.07));
+    }
+
+    playCrowd() {
+        if (!this.ready || this.muted) return;
+        this.unlock();
+        const t = this.now();
+        for (let i = 0; i < 6; i++) {
+            const n = this.noiseSource(0.28);
+            const bp = this.ctx.createBiquadFilter();
+            bp.type = 'bandpass';
+            bp.frequency.value = 400 + Math.random() * 800;
+            const g = this.ctx.createGain();
+            const when = t + i * 0.03;
+            g.gain.setValueAtTime(0.001, when);
+            g.gain.linearRampToValueAtTime(0.07, when + 0.04);
+            g.gain.exponentialRampToValueAtTime(0.001, when + 0.26);
+            n.connect(bp);
+            bp.connect(g);
+            g.connect(this.sfxGain);
+            n.start(when);
+        }
+        this.tone(523, 0.12, 'triangle', 0.1, t);
+        this.tone(784, 0.16, 'triangle', 0.1, t + 0.08);
+    }
+
     setVolume(percent) {
         this.volume = Math.max(0, Math.min(1, percent / 100));
         if (this.master) {
